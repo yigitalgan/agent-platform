@@ -1,0 +1,72 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      # Bind to localhost only — the browser reaches it via localhost, and this
+      # keeps the (auth-protected) API off the LAN. Use a reverse proxy for
+      # remote access.
+      - "127.0.0.1:8000:8000"
+    environment:
+      # These override values from .env for the container. DATABASE_URL points
+      # at /data (a named volume), NOT the bind-mounted source tree, so the
+      # SQLite file survives container removal and rebuilds. Note the 4 slashes
+      # = absolute path /data/app.db.
+      - LLM_PROVIDER=${LLM_PROVIDER:-anthropic}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      # Tavily web-search key (optional; the web_search tool needs it). Free tier
+      # ~1000 searches/month. Backend still starts if empty.
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:////data/app.db}
+      # Shared API key required on all /api/v1/* requests. Backend won't start
+      # if empty — set APP_API_KEY in .env.
+      - APP_API_KEY=${APP_API_KEY:-}
+      # RAG storage lives under /data (the named volume) so the ChromaDB index
+      # and the downloaded sentence-transformers model survive rebuilds and
+      # aren't re-downloaded on every container start.
+      - CHROMA_DIR=${CHROMA_DIR:-/data/chroma}
+      - HF_HOME=/data/hf
+      # MCP (Faz 8): SSRF guard escape hatch for local testing. Keep false in
+      # production (see .env.example warning).
+      - ALLOW_PRIVATE_MCP_URLS=${ALLOW_PRIVATE_MCP_URLS:-false}
+    volumes:
+      # Bind-mount source for hot-reload (uvicorn --reload).
+      - ./backend:/app
+      # Named volume for the SQLite DB — persists across down/up and rebuilds.
+      - agent_db:/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build: ./frontend
+    ports:
+      # Localhost only (see backend note).
+      - "127.0.0.1:3000:3000"
+    environment:
+      # Browser-side fetch: must reach the backend via the host, not the
+      # docker service name, so use localhost.
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      # Same shared key the backend requires (single source of truth in .env).
+      # NOTE: NEXT_PUBLIC_* is baked into the client bundle → visible in the
+      # browser. This gates LAN/port-scan access, not UI users. See CLAUDE.md.
+      - NEXT_PUBLIC_APP_API_KEY=${APP_API_KEY:-}
+      # Docker Desktop on Windows/macOS doesn't forward host FS events into the
+      # container, so Next's watcher misses edits. Poll instead for hot-reload.
+      - WATCHPACK_POLLING=true
+    volumes:
+      # Bind-mount source for hot-reload, but keep container's node_modules
+      # and .next (anonymous volumes) instead of shadowing them from the host.
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  # SQLite database file lives here so it outlives the backend container.
+  agent_db:

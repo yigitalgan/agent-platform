@@ -1,0 +1,14 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+pydantic-settings==2.7.1
+anthropic==0.42.0
+# RAG (Faz 5): file upload + embeddings + vector store + PDF text extraction.
+python-multipart==0.0.20
+sentence-transformers==3.3.1
+chromadb==0.5.23
+pypdf==5.1.0
+# MCP (Faz 8): remote (HTTP/SSE) Model Context Protocol client.
+mcp==1.9.4
+# Hardening: per-IP rate limiting on the streaming (cost-bearing) endpoints.
+slowapi==0.1.9
